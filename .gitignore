@@ -1,0 +1,6 @@
+cat <<EOF > .gitignore
+/target
+**/*.rs.bk
+Cargo.lock
+.DS_Store
+EOF
