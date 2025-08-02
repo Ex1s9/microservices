@@ -1,0 +1,123 @@
+syntax = "proto3";
+package gamehub.v1;
+
+import "google/protobuf/timestamp.proto";
+
+syntax = "proto3";
+package game;
+
+import "google/protobuf/timestamp.proto";
+
+enum GameCategory {
+    GAME_CATEGORY_UNSPECIFIED = 0;
+    GAME_CATEGORY_ACTION = 1;
+    GAME_CATEGORY_RPG = 2;
+    GAME_CATEGORY_STRATEGY = 3;
+    GAME_CATEGORY_SPORTS = 4;
+    GAME_CATEGORY_RACING = 5;
+    GAME_CATEGORY_ADVENTURE = 6;
+    GAME_CATEGORY_SIMULATION = 7;
+    GAME_CATEGORY_PUZZLE = 8;
+}
+
+enum GameStatus {
+    GAME_STATUS_UNSPECIFIED = 0;
+    GAME_STATUS_DRAFT = 1;
+    GAME_STATUS_UNDER_REVIEW = 2;
+    GAME_STATUS_PUBLISHED = 3;
+    GAME_STATUS_SUSPENDED = 4;
+}
+
+message Game {
+    string id = 1;
+    string name = 2;
+    string description = 3;
+    string developer_id = 4;
+    optional string publisher_id = 5;
+    string cover_image = 6;
+    optional string trailer_url = 7;
+    string release_date = 8;
+    repeated string tags = 9;
+    repeated string platforms = 10;
+    repeated string screenshots = 11;
+    double price = 12;
+    google.protobuf.Timestamp created_at = 13;
+    google.protobuf.Timestamp updated_at = 14;
+    GameStatus status = 15;
+    repeated GameCategory categories = 16;
+    
+    int32 rating_count = 17;
+    double average_rating = 18;
+    int32 purchase_count = 19;
+}
+
+message CreateGameRequest {
+    string name = 1;
+    string description = 2;
+    string developer_id = 3;
+    repeated GameCategory categories = 4;
+    double price = 5;
+    string cover_image = 6;
+    repeated string tags = 7;
+    repeated string platforms = 8;
+    optional string publisher_id = 9;
+    optional string trailer_url = 10;
+    string release_date = 11;
+}
+
+message UpdateGameRequest {
+    string id = 1;
+    optional string name = 2;
+    optional string description = 3;
+    optional double price = 4;
+    optional string cover_image = 5;
+    repeated string tags = 6;
+    repeated string platforms = 7;
+    repeated string screenshots = 8;
+    optional string trailer_url = 9;
+    optional GameStatus status = 10;
+    repeated GameCategory categories = 11;
+}
+
+message GetGameRequest {
+    string id = 1;
+}
+
+message GetGameResponse {
+    Game game = 1;
+}
+
+message DeleteGameRequest {
+    string id = 1;
+    string developer_id = 2;
+}
+
+message DeleteGameResponse {
+    bool success = 1;
+}
+
+message ListGamesRequest {
+    optional string developer_id = 1;
+    repeated GameCategory categories = 2;
+    optional double min_price = 3;
+    optional double max_price = 4;
+    optional GameStatus status = 5;
+    optional string search_query = 6; 
+    int32 limit = 7;
+    int32 offset = 8;
+    optional string sort_by = 9;
+    optional bool sort_desc = 10;
+}
+
+message ListGamesResponse {
+    repeated Game games = 1;
+    int32 total = 2;
+}
+
+service GameService {
+    rpc CreateGame (CreateGameRequest) returns (Game);
+    rpc GetGame (GetGameRequest) returns (GetGameResponse);
+    rpc UpdateGame (UpdateGameRequest) returns (Game);
+    rpc DeleteGame (DeleteGameRequest) returns (DeleteGameResponse);
+    rpc ListGames (ListGamesRequest) returns (ListGamesResponse);
+}
