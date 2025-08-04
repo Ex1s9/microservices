@@ -1,6 +1,6 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 pub mod models {
     use super::*;
@@ -12,7 +12,7 @@ pub mod models {
         Developer,
         Admin,
     }
-    
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct User {
         pub id: Uuid,
@@ -64,13 +64,13 @@ pub mod models {
         pub price: Option<f64>,
         pub status: Option<GameStatus>,
     }
-    
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "snake_case")]
     pub enum GameStatus {
         Draft,
         Published,
-        Archived
+        Archived,
     }
 }
 
@@ -113,6 +113,6 @@ pub mod errors {
     impl std::error::Error for ServiceError {}
 }
 
+pub use errors::*;
 pub use models::*;
 pub use utils::*;
-pub use errors::*;

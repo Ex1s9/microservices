@@ -6,3 +6,8 @@ edition = "2024"
 [dependencies]
 common = { path = "../../common" }
 
+chrono = { workspace = true }
+uuid = { workspace = true }
+tonic = { workspace = true }
+
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres", "uuid", "chrono", "migrate"] }

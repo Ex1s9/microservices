@@ -1,12 +1,9 @@
-syntax = "proto3";
-package gamehub.v1;
-
 import "google/protobuf/timestamp.proto";
 
 syntax = "proto3";
 package game;
 
-import "google/protobuf/timestamp.proto";
+import "google/protobuf/timestamp.proto"; ////////
 
 enum GameCategory {
     GAME_CATEGORY_UNSPECIFIED = 0;
@@ -29,25 +26,25 @@ enum GameStatus {
 }
 
 message Game {
-    string id = 1;
+    string id = 1;                              
     string name = 2;
-    string description = 3;
+    optional string description = 3;
     string developer_id = 4;
     optional string publisher_id = 5;
     string cover_image = 6;
     optional string trailer_url = 7;
-    string release_date = 8;
+    string release_date = 8;                    
     repeated string tags = 9;
     repeated string platforms = 10;
     repeated string screenshots = 11;
-    double price = 12;
+    double price = 12;                          
     google.protobuf.Timestamp created_at = 13;
     google.protobuf.Timestamp updated_at = 14;
     GameStatus status = 15;
     repeated GameCategory categories = 16;
     
     int32 rating_count = 17;
-    double average_rating = 18;
+    double average_rating = 18;                 
     int32 purchase_count = 19;
 }
 

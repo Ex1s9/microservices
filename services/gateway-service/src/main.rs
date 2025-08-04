@@ -1,19 +1,18 @@
 use actix_web::{
-    middleware::{self, Next},
-    web, App, HttpServer, HttpResponse, Error,
+    App, Error, HttpMessage, HttpResponse, HttpServer,
     dev::{ServiceRequest, ServiceResponse},
-    HttpMessage,
+    middleware::{self, Next},
+    web,
 };
 use serde_json;
 
 use actix_cors::Cors;
-use uuid::Uuid;
-use std::time::{Duration, Instant};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use serde::{Deserialize, Serialize};
+use std::time::{Duration, Instant};
 use tonic::transport::Channel;
-
+use uuid::Uuid;
 
 struct RateLimiter {
     requests: Mutex<HashMap<String, Vec<Instant>>>,
@@ -29,11 +28,11 @@ impl RateLimiter {
     fn check_rate_limit(&self, ip: &str, limit: usize, window: Duration) -> bool {
         let mut requests = self.requests.lock().unwrap();
         let now = Instant::now();
-        
+
         let timestamps = requests.entry(ip.to_string()).or_insert_with(Vec::new);
-        
+
         timestamps.retain(|&t| now.duration_since(t) < window);
-        
+
         if timestamps.len() >= limit {
             false
         } else {
@@ -84,7 +83,6 @@ struct ListUsersHttpResponse {
     total: i32,
 }
 
-
 struct AppState {
     user_client: user::user_service_client::UserServiceClient<Channel>,
 }
@@ -97,9 +95,11 @@ async fn create_user(
         "player" => 0,
         "developer" => 1,
         "admin" => 2,
-        _ => return Ok(HttpResponse::BadRequest().json(serde_json::json!({
-            "error": "Invalid role"
-        }))),
+        _ => {
+            return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "Invalid role"
+            })));
+        }
     };
 
     let request = tonic::Request::new(user::CreateUserRequest {
@@ -113,38 +113,33 @@ async fn create_user(
     match client.create_user(request).await {
         Ok(response) => {
             let user = response.into_inner();
-            
+
             let user_dto = UserDto {
                 id: user.id,
                 email: user.email,
                 username: user.username,
                 role: proto_role_to_string(user.role),
-                created_at: user.created_at
+                created_at: user
+                    .created_at
                     .map(|ts| format!("{}", ts.seconds))
                     .unwrap_or_default(),
             };
-            
+
             Ok(HttpResponse::Ok().json(user_dto))
         }
-        Err(status) => {
-            match status.code() {
-                tonic::Code::InvalidArgument => {
-                    Ok(HttpResponse::BadRequest().json(serde_json::json!({
-                        "error": status.message()
-                    })))
-                }
-                tonic::Code::AlreadyExists => {
-                    Ok(HttpResponse::Conflict().json(serde_json::json!({
-                        "error": "User with this email or username already exists"
-                    })))
-                }
-                _ => {
-                    Ok(HttpResponse::InternalServerError().json(serde_json::json!({
-                        "error": status.message()
-                    })))
-                }
+        Err(status) => match status.code() {
+            tonic::Code::InvalidArgument => {
+                Ok(HttpResponse::BadRequest().json(serde_json::json!({
+                    "error": status.message()
+                })))
             }
-        }
+            tonic::Code::AlreadyExists => Ok(HttpResponse::Conflict().json(serde_json::json!({
+                "error": "User with this email or username already exists"
+            }))),
+            _ => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": status.message()
+            }))),
+        },
     }
 }
 
@@ -153,11 +148,9 @@ async fn get_user(
     path: web::Path<String>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let user_id = path.into_inner();
-    
-    let request = tonic::Request::new(user::GetUserRequest {
-        id: user_id,
-    });
-    
+
+    let request = tonic::Request::new(user::GetUserRequest { id: user_id });
+
     let mut client = data.user_client.clone();
     match client.get_user(request).await {
         Ok(response) => {
@@ -168,7 +161,8 @@ async fn get_user(
                     email: user.email,
                     username: user.username,
                     role: proto_role_to_string(user.role),
-                    created_at: user.created_at
+                    created_at: user
+                        .created_at
                         .map(|ts| format!("{}", ts.seconds))
                         .unwrap_or_default(),
                 };
@@ -179,16 +173,14 @@ async fn get_user(
                 })))
             }
         }
-        Err(status) => {
-            match status.code() {
-                tonic::Code::NotFound => Ok(HttpResponse::NotFound().json(serde_json::json!({
-                    "error": "User not found"
-                }))),
-                _ => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
-                    "error": status.message()
-                }))),
-            }
-        }
+        Err(status) => match status.code() {
+            tonic::Code::NotFound => Ok(HttpResponse::NotFound().json(serde_json::json!({
+                "error": "User not found"
+            }))),
+            _ => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": status.message()
+            }))),
+        },
     }
 }
 
@@ -198,21 +190,23 @@ async fn update_user(
     json: web::Json<UpdateUserDto>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let user_id = path.into_inner();
-    
+
     if uuid::Uuid::parse_str(&user_id).is_err() {
         return Ok(HttpResponse::BadRequest().json(serde_json::json!({
             "error": "Invalid user ID format"
         })));
     }
-    
+
     let role = if let Some(role_str) = &json.role {
         match role_str.as_str() {
             "player" => Some(0),
             "developer" => Some(1),
             "admin" => Some(2),
-            _ => return Ok(HttpResponse::BadRequest().json(serde_json::json!({
-                "error": "Invalid role. Must be: player, developer, or admin"
-            }))),
+            _ => {
+                return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+                    "error": "Invalid role. Must be: player, developer, or admin"
+                })));
+            }
         }
     } else {
         None
@@ -230,7 +224,7 @@ async fn update_user(
     match client.update_user(request).await {
         Ok(response) => {
             let resp = response.into_inner();
-            
+
             match resp.user {
                 Some(user) => {
                     let user_dto = UserDto {
@@ -238,7 +232,8 @@ async fn update_user(
                         email: user.email,
                         username: user.username,
                         role: proto_role_to_string(user.role),
-                        created_at: user.created_at
+                        created_at: user
+                            .created_at
                             .map(|ts| format!("{}", ts.seconds))
                             .unwrap_or_default(),
                     };
@@ -246,25 +241,25 @@ async fn update_user(
                 }
                 None => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
                     "error": "Server returned empty response"
-                })))
+                }))),
             }
         }
-        Err(status) => {
-            match status.code() {
-                tonic::Code::NotFound => Ok(HttpResponse::NotFound().json(serde_json::json!({
-                    "error": "User not found"
-                }))),
-                tonic::Code::InvalidArgument => Ok(HttpResponse::BadRequest().json(serde_json::json!({
+        Err(status) => match status.code() {
+            tonic::Code::NotFound => Ok(HttpResponse::NotFound().json(serde_json::json!({
+                "error": "User not found"
+            }))),
+            tonic::Code::InvalidArgument => {
+                Ok(HttpResponse::BadRequest().json(serde_json::json!({
                     "error": status.message()
-                }))),
-                tonic::Code::AlreadyExists => Ok(HttpResponse::Conflict().json(serde_json::json!({
-                    "error": "Email or username already taken"
-                }))),
-                _ => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
-                    "error": format!("Internal error: {}", status.message())
                 })))
             }
-        }
+            tonic::Code::AlreadyExists => Ok(HttpResponse::Conflict().json(serde_json::json!({
+                "error": "Email or username already taken"
+            }))),
+            _ => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Internal error: {}", status.message())
+            }))),
+        },
     }
 }
 
@@ -274,27 +269,21 @@ async fn delete_user(
 ) -> Result<HttpResponse, actix_web::Error> {
     let user_id = path.into_inner();
 
-    let request = tonic::Request::new(user::DeleteUserRequest {
-        id: user_id,
-    });
+    let request = tonic::Request::new(user::DeleteUserRequest { id: user_id });
 
     let mut client = data.user_client.clone();
     match client.delete_user(request).await {
-        Ok(_) => {
-            Ok(HttpResponse::Ok().json(serde_json::json!({
-                "message": "User deleted successfully"
-            })))
-        }
-        Err(status) => {
-            match status.code() {
-                tonic::Code::NotFound => Ok(HttpResponse::NotFound().json(serde_json::json!({
-                    "error": "User not found"
-                }))),
-                _ => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
-                    "error": status.message()
-                }))),
-            }
-        }
+        Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": "User deleted successfully"
+        }))),
+        Err(status) => match status.code() {
+            tonic::Code::NotFound => Ok(HttpResponse::NotFound().json(serde_json::json!({
+                "error": "User not found"
+            }))),
+            _ => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": status.message()
+            }))),
+        },
     }
 }
 
@@ -313,26 +302,29 @@ async fn users_list(
         Ok(response) => {
             let resp = response.into_inner();
 
-            let user_dtos: Vec<UserDto> = resp.users.into_iter().map(|user| UserDto {
-                id: user.id,
-                email: user.email,
-                username: user.username,
-                role: proto_role_to_string(user.role),
-                created_at: user.created_at
-                    .map(|ts| format!("{}", ts.seconds))
-                    .unwrap_or_default(),
-            }).collect();
+            let user_dtos: Vec<UserDto> = resp
+                .users
+                .into_iter()
+                .map(|user| UserDto {
+                    id: user.id,
+                    email: user.email,
+                    username: user.username,
+                    role: proto_role_to_string(user.role),
+                    created_at: user
+                        .created_at
+                        .map(|ts| format!("{}", ts.seconds))
+                        .unwrap_or_default(),
+                })
+                .collect();
 
             Ok(HttpResponse::Ok().json(ListUsersHttpResponse {
                 users: user_dtos,
                 total: resp.total,
             }))
         }
-        Err(status) => {
-            Ok(HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": status.message()
-            })))
-        }
+        Err(status) => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": status.message()
+        }))),
     }
 }
 
@@ -350,20 +342,21 @@ async fn rate_limit_middleware(
     next: Next<impl actix_web::body::MessageBody + 'static>,
 ) -> Result<ServiceResponse<actix_web::body::BoxBody>, Error> {
     let rate_limiter = req.app_data::<web::Data<RateLimiter>>().unwrap();
-    let ip = req.peer_addr()
+    let ip = req
+        .peer_addr()
         .map(|addr| addr.ip().to_string())
         .unwrap_or_else(|| "unknown".to_string());
-    
+
     if !rate_limiter.check_rate_limit(&ip, 100, Duration::from_secs(60)) {
         return Ok(req.into_response(
             HttpResponse::TooManyRequests()
                 .json(serde_json::json!({
                     "error": "Rate limit exceeded. Please try again later."
                 }))
-                .map_into_boxed_body()
+                .map_into_boxed_body(),
         ));
     }
-    
+
     let res = next.call(req).await?;
     Ok(res.map_into_boxed_body())
 }
@@ -373,18 +366,23 @@ async fn request_id_middleware(
     next: Next<impl actix_web::body::MessageBody + 'static>,
 ) -> Result<ServiceResponse<actix_web::body::BoxBody>, Error> {
     let request_id = Uuid::new_v4().to_string();
-    
+
     req.extensions_mut().insert(request_id.clone());
-    
-    println!("Request ID: {} - {} {}", request_id, req.method(), req.path());
-    
+
+    println!(
+        "Request ID: {} - {} {}",
+        request_id,
+        req.method(),
+        req.path()
+    );
+
     let mut res = next.call(req).await?;
-    
+
     res.headers_mut().insert(
         actix_web::http::header::HeaderName::from_static("x-request-id"),
         actix_web::http::header::HeaderValue::from_str(&request_id).unwrap(),
     );
-    
+
     Ok(res.map_into_boxed_body())
 }
 
@@ -395,15 +393,13 @@ async fn main() -> std::io::Result<()> {
     let user_client = user::user_service_client::UserServiceClient::connect("http://[::1]:50051")
         .await
         .expect("Failed to connect to user service");
-    
-    let app_state = web::Data::new(AppState {
-        user_client,
-    });
+
+    let app_state = web::Data::new(AppState { user_client });
 
     let rate_limiter = web::Data::new(RateLimiter::new());
-    
+
     println!("Gateway service listening on http://localhost:8080");
-    
+
     HttpServer::new(move || {
         let cors = Cors::default()
             .allowed_origin("http://localhost:3000") // React
@@ -417,13 +413,15 @@ async fn main() -> std::io::Result<()> {
             .expose_headers(vec!["x-request-id"])
             .max_age(3600);
 
-            App::new()
+        App::new()
             .app_data(app_state.clone())
             .app_data(rate_limiter.clone())
             .wrap(middleware::from_fn(request_id_middleware))
             .wrap(middleware::from_fn(rate_limit_middleware))
             .wrap(cors)
-            .wrap(middleware::Logger::new("%a \"%r\" %s %b \"%{Referer}i\" \"%{User-Agent}i\" %T"))
+            .wrap(middleware::Logger::new(
+                "%a \"%r\" %s %b \"%{Referer}i\" \"%{User-Agent}i\" %T",
+            ))
             .route("/api/users", web::post().to(create_user))
             .route("/api/users/{id}", web::get().to(get_user))
             .route("/api/users/{id}", web::put().to(update_user))

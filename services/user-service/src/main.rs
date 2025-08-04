@@ -131,21 +131,16 @@ impl user::user_service_server::UserService for UserServiceImpl {
         }))
     }
 
-
     async fn list_users(
         &self,
         request: Request<user::ListUsersRequest>,
     ) -> Result<Response<user::ListUsersResponse>, Status> {
         let req = request.into_inner();
-        
-        let users = db::list_users(
-            &self.pool, 
-            Some(req.limit), 
-            Some(req.offset)
-        )
-        .await
-        .map_err(|e| Status::internal(format!("Failed to list users: {}", e)))?;
-        
+
+        let users = db::list_users(&self.pool, Some(req.limit), Some(req.offset))
+            .await
+            .map_err(|e| Status::internal(format!("Failed to list users: {}", e)))?;
+
         let user_messages: Vec<user::UserMessage> = users
             .into_iter()
             .map(|user| user::UserMessage {
@@ -156,9 +151,9 @@ impl user::user_service_server::UserService for UserServiceImpl {
                 created_at: Some(datetime_to_timestamp(user.created_at)),
             })
             .collect();
-        
+
         let total = user_messages.len() as i32;
-        
+
         Ok(Response::new(user::ListUsersResponse {
             users: user_messages,
             total,
@@ -168,11 +163,9 @@ impl user::user_service_server::UserService for UserServiceImpl {
 
 pub fn user_service_error_to_status(err: UserServiceError) -> Status {
     match err {
-        UserServiceError::Database(sqlx_err) => {
-            match sqlx_err {
-                sqlx::Error::RowNotFound => Status::not_found("User not found"),
-                _ => Status::internal(format!("Database error: {}", sqlx_err)),
-            }
+        UserServiceError::Database(sqlx_err) => match sqlx_err {
+            sqlx::Error::RowNotFound => Status::not_found("User not found"),
+            _ => Status::internal(format!("Database error: {}", sqlx_err)),
         },
         UserServiceError::InvalidUuid(_) => Status::invalid_argument("Invalid user ID format"),
         UserServiceError::PasswordHash(_) => Status::internal("Password processing failed"),
@@ -200,17 +193,14 @@ fn db_role_to_proto(role: db::DbUserRole) -> i32 {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
-    let database_url = env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set in .env");
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set in .env");
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)
         .await?;
 
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await?;
+    sqlx::migrate!("./migrations").run(&pool).await?;
 
     let addr = "[::1]:50051".parse()?;
     let user_service = UserServiceImpl::new(pool);
@@ -218,7 +208,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("UserService listening on {}", addr);
 
     Server::builder()
-        .add_service(user::user_service_server::UserServiceServer::new(user_service))
+        .add_service(user::user_service_server::UserServiceServer::new(
+            user_service,
+        ))
         .serve(addr)
         .await?;
 

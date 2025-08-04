@@ -19,6 +19,7 @@ pub enum DbGameCategory {
 #[derive(Debug, sqlx::Type, Clone)]
 #[sqlx(type_name = "game_status", rename_all = "snake_case")]
 pub enum DbGameStatus {
+     Unspecified,
      Draft,
      UnderReview,
      Published,
@@ -37,19 +38,14 @@ pub struct DbGame {
      pub release_date: chrono::NaiveDate,
      pub price: Decimal,
      pub status: DbGameStatus,
+     pub categories: Vec<DbGameCategory>,
+     pub tags: Vec<String>,
+     pub platforms: Vec<String>,
+     pub screenshots: Vec<String>,
      pub rating_count: i32,
      pub average_rating: Decimal,
      pub purchase_count: i32,
      pub created_at: DateTime<Utc>,
      pub updated_at: DateTime<Utc>,
      pub deleted_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug)]
-pub struct DbGameFull {
-     pub game: DbGame,
-     pub categories: Vec<DbGameCategory>,
-     pub tags: Vec<String>,
-     pub platforms: Vec<String>,
-     pub screenshots: Vec<String>,
 }
