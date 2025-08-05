@@ -1,9 +1,7 @@
-import "google/protobuf/timestamp.proto";
-
 syntax = "proto3";
 package game;
 
-import "google/protobuf/timestamp.proto"; ////////
+import "google/protobuf/timestamp.proto";
 
 enum GameCategory {
     GAME_CATEGORY_UNSPECIFIED = 0;

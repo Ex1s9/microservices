@@ -9,5 +9,13 @@ common = { path = "../../common" }
 chrono = { workspace = true }
 uuid = { workspace = true }
 tonic = { workspace = true }
+prost-types = { workspace = true }
+rust_decimal = { workspace = true }
+dotenv = { workspace = true }
 
 sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres", "uuid", "chrono", "migrate"] }
+
+reqwest = { version = "0.11", features = ["json", "multipart"] }
+
+[build-dependencies]
+tonic-build = { workspace = true }

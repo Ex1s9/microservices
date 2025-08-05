@@ -49,3 +49,55 @@ pub struct DbGame {
      pub updated_at: DateTime<Utc>,
      pub deleted_at: Option<DateTime<Utc>>,
 }
+
+impl DbGameCategory {
+     pub fn from_proto(value: i32) -> Self {
+          match value {
+               1 => Self::Action,
+               2 => Self::Rpg,
+               3 => Self::Strategy,
+               4 => Self::Sports,
+               5 => Self::Racing,
+               6 => Self::Adventure,
+               7 => Self::Simulation,
+               8 => Self::Puzzle,
+               _ => Self::Unspecified,
+          }
+     }
+
+     pub fn to_proto(&self) -> i32 {
+          match self {
+               Self::Action => 1,
+               Self::Rpg => 2,
+               Self::Strategy => 3,
+               Self::Sports => 4,
+               Self::Racing => 5,
+               Self::Adventure => 6,
+               Self::Simulation => 7,
+               Self::Puzzle => 8,
+               Self::Unspecified => 0,
+          }
+     }
+}
+
+impl DbGameStatus {
+     pub fn from_proto(value: i32) -> Self {
+          match value {
+               1 => Self::Draft,
+               2 => Self::UnderReview,
+               3 => Self::Published,
+               4 => Self::Suspended,
+               _ => Self::Unspecified,
+          }
+     }
+
+     pub fn to_proto(&self) -> i32 {
+          match self {
+               Self::Draft => 1,
+               Self::UnderReview => 2,
+               Self::Published => 3,
+               Self::Suspended => 4,
+               Self::Unspecified => 0,
+          }
+     }
+}
