@@ -11,6 +11,7 @@ CREATE TYPE game_category AS ENUM (
 );
 
 CREATE TYPE game_status AS ENUM (
+     'unspecified',
      'draft',
      'under_review',
      'published',
