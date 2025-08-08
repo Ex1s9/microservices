@@ -1,5 +1,6 @@
 use tonic::transport::Server;
 use dotenv::dotenv;
+use sqlx::postgres::PgPool;
 
 pub mod game {
     tonic::include_proto!("game");
@@ -9,6 +10,8 @@ mod types;
 mod grpc_service;
 mod handlers;
 mod routes;
+mod db;
+mod models;
 
 use crate::grpc_service::GameServiceImpl;
 use crate::routes::create_routes;
@@ -17,10 +20,14 @@ use crate::routes::create_routes;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
+    let database_url = std::env::var("DATABASE_URL")
+        .expect("DATABASE_URL must be set");
+    let pool = PgPool::connect(&database_url).await?;
+
     let grpc_addr = "[::1]:50052".parse()?;
     let http_addr = "0.0.0.0:8080".parse::<std::net::SocketAddr>()?;
     
-    let game_service = GameServiceImpl;
+    let game_service = GameServiceImpl { pool };
 
     let app = create_routes();
 

@@ -1,12 +1,17 @@
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 use chrono::Utc;
+use sqlx::PgPool;
 
 use crate::game;
 use crate::types::GameResponse;
+use crate::models::{DbGame, DbGameCategory, DbGameStatus};
+use crate::db;
 
 #[derive(Clone)]
-pub struct GameServiceImpl;
+pub struct GameServiceImpl {
+    pub pool: PgPool,
+}
 
 #[tonic::async_trait]
 impl game::game_service_server::GameService for GameServiceImpl {
@@ -70,13 +75,90 @@ impl game::game_service_server::GameService for GameServiceImpl {
 
     async fn list_games(
         &self,
-        _request: Request<game::ListGamesRequest>,
+        request: Request<game::ListGamesRequest>,
     ) -> Result<Response<game::ListGamesResponse>, Status> {
-        Err(Status::unimplemented("ListGames not implemented yet"))
+        let req = request.into_inner();
+
+        let limit = req.page_size.max(1).min(100) as i32;
+        let offset = req.page_token.parse::<i32>().unwrap_or(0);
+        
+        let developer_id = if req.developer_id.is_empty() {
+            None
+        } else {
+            Some(Uuid::parse_str(&req.developer_id).map_err(|_| Status::invalid_argument("Invalid developer_id"))?)
+        };
+        
+        let categories: Option<Vec<DbGameCategory>> = if req.categories.is_empty() {
+            None
+        } else {
+            Some(req.categories.into_iter().map(DbGameCategory::from_proto).collect())
+        };
+        
+        let status = if req.status == 0 { None } else { Some(DbGameStatus::from_proto(req.status)) };
+        
+        let search_query = if req.search_query.is_empty() { None } else { Some(req.search_query) };
+
+        let (db_games, total) = db::list_games(
+            &self.pool,
+            developer_id,
+            categories,
+            req.min_price.map(|p| sqlx::types::Decimal::new(p, 2)),
+            req.max_price.map(|p| sqlx::types::Decimal::new(p, 2)),
+            status,
+            search_query,
+            limit,
+            offset,
+        ).await.map_err(|e| Status::internal(format!("Database error: {}", e)))?;
+
+        let games: Vec<game::Game> = db_games.into_iter().map(|g| self.db_game_to_proto(g)).collect();
+        
+        let next_page_token = if (offset + limit) < total as i32 {
+            (offset + limit).to_string()
+        } else {
+            String::new()
+        };
+
+        let response = game::ListGamesResponse {
+            games,
+            total_count: total as u64,
+            next_page_token,
+        };
+
+        Ok(Response::new(response))
     }
 }
 
 impl GameServiceImpl {
+    pub fn db_game_to_proto(&self, db_game: DbGame) -> game::Game {
+        game::Game {
+            id: db_game.id.to_string(),
+            name: db_game.name,
+            description: Some(db_game.description),
+            developer_id: db_game.developer_id.to_string(),
+            publisher_id: db_game.publisher_id.map(|p| p.to_string()).unwrap_or_default(),
+            cover_image: Some(db_game.cover_image),
+            trailer_url: db_game.trailer_url,
+            release_date: Some(db_game.release_date.format("%Y-%m-%d").to_string()),
+            tags: db_game.tags,
+            platforms: db_game.platforms,
+            screenshots: db_game.screenshots,
+            price: db_game.price.to_string().parse::<i64>().unwrap_or(0),
+            created_at: Some(prost_types::Timestamp {
+                seconds: db_game.created_at.timestamp(),
+                nanos: (db_game.created_at.timestamp_subsec_nanos()) as i32,
+            }),
+            updated_at: Some(prost_types::Timestamp {
+                seconds: db_game.updated_at.timestamp(),
+                nanos: (db_game.updated_at.timestamp_subsec_nanos()) as i32,
+            }),
+            status: db_game.status.to_proto(),
+            categories: db_game.categories.into_iter().map(|c| c.to_proto()).collect(),
+            rating_count: db_game.rating_count as u32,
+            average_rating: db_game.average_rating.to_string().parse::<f64>().unwrap_or(0.0),
+            purchase_count: db_game.purchase_count as u32,
+        }
+    }
+
     pub fn convert_to_response(&self, game: game::Game) -> GameResponse {
         GameResponse {
             id: game.id,
