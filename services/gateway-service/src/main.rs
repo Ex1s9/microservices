@@ -42,6 +42,10 @@ impl RateLimiter {
     }
 }
 
+pub mod game {
+    tonic::include_proto!("game");
+}
+
 pub mod user {
     tonic::include_proto!("user");
 }
@@ -83,8 +87,89 @@ struct ListUsersHttpResponse {
     total: i32,
 }
 
+// Game DTOs and handlers would go here similarly
+#[derive(Deserialize)]
+struct CreateGameDto {
+    name: String,
+    description: Option<String>,
+    developer_id: String,
+    publisher_id: Option<String>,
+    cover_image: Option<String>,
+    trailer_url: Option<String>,
+    release_date: Option<String>,
+    tags: Vec<String>,
+    platforms: Vec<String>,
+    screenshots: Vec<String>,
+    price: f32,
+    status: String,
+    categories: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct GameDto {
+    id: String,
+    name: String,
+    description: Option<String>,
+    developer_id: String,
+    publisher_id: Option<String>,
+    cover_image: String,
+    trailer_url: Option<String>,
+    release_date: String,
+    tags: Vec<String>,
+    platforms: Vec<String>,
+    screenshots: Vec<String>,
+    price: f64,
+    status: String,
+    categories: Vec<String>,
+    rating_count: i32,
+    average_rating: f64,
+    purchase_count: i32,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Deserialize)]
+struct UpdateGameDto {
+    name: Option<String>,
+    description: Option<String>,
+    price: Option<f64>,
+    cover_image: Option<String>,
+    tags: Option<Vec<String>>,
+    platforms: Option<Vec<String>>,
+    screenshots: Option<Vec<String>>,
+    trailer_url: Option<String>,
+    status: Option<String>,
+    categories: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct ListGamesQuery {
+    developer_id: Option<String>,
+    categories: Option<Vec<String>>,
+    min_price: Option<f64>,
+    max_price: Option<f64>,
+    status: Option<String>,
+    search_query: Option<String>,
+    limit: Option<i32>,
+    offset: Option<i32>,
+    sort_by: Option<String>,
+    sort_desc: Option<bool>,
+}
+
+#[derive(Serialize)]
+struct ListGamesResponse {
+    games: Vec<GameDto>,
+    total: i32,
+}
+
+#[derive(Deserialize)]
+struct DeleteGameDto {
+    developer_id: String,
+}
+
 struct AppState {
     user_client: user::user_service_client::UserServiceClient<Channel>,
+    game_client: game::game_service_client::GameServiceClient<Channel>,
 }
 
 async fn create_user(
