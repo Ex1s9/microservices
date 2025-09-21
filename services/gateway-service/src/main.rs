@@ -100,7 +100,7 @@ struct CreateGameDto {
     tags: Vec<String>,
     platforms: Vec<String>,
     screenshots: Vec<String>,
-    price: f32,
+    price: f64,
     status: String,
     categories: Vec<String>,
 }
@@ -413,6 +413,436 @@ async fn users_list(
     }
 }
 
+async fn create_game(
+    data: web::Data<AppState>,
+    json: web::Json<CreateGameDto>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let developer_id = match Uuid::parse_str(&json.developer_id) {
+        Ok(uuid) => uuid.to_string(),
+        Err(_) => {
+            return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "Invalid developer_id format"
+            })));
+        }
+    };
+
+    let request = tonic::Request::new(game::CreateGameRequest {
+        name: json.name.clone(),
+        description: json.description.clone().unwrap_or_default(),
+        developer_id,
+        publisher_id: json.publisher_id.clone().unwrap_or_default(),
+        cover_image: json.cover_image.clone().unwrap_or_default(),
+        trailer_url: json.trailer_url.clone().unwrap_or_default(),
+        release_date: json.release_date.clone().unwrap_or_default(),
+        tags: json.tags.clone(),
+        platforms: json.platforms.clone(),
+        screenshots: json.screenshots.clone(),
+        price: json.price,
+        categories: json.categories.iter().map(|cat| match cat.as_str() {
+            "action" => 1,
+            "rpg" => 2,
+            "strategy" => 3,
+            "sports" => 4,
+            "racing" => 5,
+            "adventure" => 6,
+            "simulation" => 7,
+            "puzzle" => 8,
+            _ => 0, // unspecified
+        }).collect(),
+    });
+
+    let mut client = data.game_client.clone();
+    match client.create_game(request).await {
+        Ok(response) => {
+            let game = response.into_inner();
+            let game_dto = GameDto {
+                id: game.id,
+                name: game.name,
+                description: Some(game.description),
+                developer_id: game.developer_id,
+                publisher_id: if game.publisher_id.is_empty() { None } else { Some(game.publisher_id) },
+                cover_image: game.cover_image,
+                trailer_url: if game.trailer_url.is_empty() { None } else { Some(game.trailer_url) },
+                release_date: game.release_date,
+                tags: game.tags,
+                platforms: game.platforms,
+                screenshots: game.screenshots,
+                price: game.price,
+                status: match game.status {
+                    0 => "unspecified".to_string(),
+                    1 => "draft".to_string(),
+                    2 => "under_review".to_string(),
+                    3 => "published".to_string(),
+                    4 => "suspended".to_string(),
+                    _ => "unknown".to_string(),
+                },
+                categories: game.categories.iter().map(|&cat| match cat {
+                    1 => "action".to_string(),
+                    2 => "rpg".to_string(),
+                    3 => "strategy".to_string(),
+                    4 => "sports".to_string(),
+                    5 => "racing".to_string(),
+                    6 => "adventure".to_string(),
+                    7 => "simulation".to_string(),
+                    8 => "puzzle".to_string(),
+                    _ => "unspecified".to_string(),
+                }).collect(),
+                rating_count: game.rating_count as i32,
+                average_rating: game.average_rating,
+                purchase_count: game.purchase_count as i32,
+                created_at: game.created_at.map(|ts| format!("{}", ts.seconds)).unwrap_or_default(),
+                updated_at: game.updated_at.map(|ts| format!("{}", ts.seconds)).unwrap_or_default(),
+            };
+            Ok(HttpResponse::Ok().json(game_dto))
+        }
+        Err(status) => match status.code() {
+            tonic::Code::InvalidArgument => {
+                Ok(HttpResponse::BadRequest().json(serde_json::json!({
+                    "error": status.message()
+                })))
+            }
+            tonic::Code::AlreadyExists => Ok(HttpResponse::Conflict().json(serde_json::json!({
+                "error": "Game with this name already exists"
+            }))),
+            _ => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": status.message()
+            }))),
+        },
+    }
+}
+
+async fn get_game(
+    data: web::Data<AppState>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let game_id = path.into_inner();
+
+    let request = tonic::Request::new(game::GetGameRequest { id: game_id });
+
+    let mut client = data.game_client.clone();
+    match client.get_game(request).await {
+        Ok(response) => {
+            let resp = response.into_inner();
+            if let Some(game) = resp.game {
+                let game_dto = GameDto {
+                    id: game.id,
+                    name: game.name,
+                    description: Some(game.description),
+                    developer_id: game.developer_id,
+                    publisher_id: if game.publisher_id.is_empty() { None } else { Some(game.publisher_id) },
+                    cover_image: game.cover_image,
+                    trailer_url: if game.trailer_url.is_empty() { None } else { Some(game.trailer_url) },
+                    release_date: game.release_date,
+                    tags: game.tags,
+                    platforms: game.platforms,
+                    screenshots: game.screenshots,
+                    price: game.price,
+                    status: match game.status {
+                        0 => "unspecified".to_string(),
+                        1 => "draft".to_string(),
+                        2 => "under_review".to_string(),
+                        3 => "published".to_string(),
+                        4 => "suspended".to_string(),
+                        _ => "unknown".to_string(),
+                    },
+                    categories: game.categories.iter().map(|&cat| match cat {
+                        1 => "action".to_string(),
+                        2 => "rpg".to_string(),
+                        3 => "strategy".to_string(),
+                        4 => "sports".to_string(),
+                        5 => "racing".to_string(),
+                        6 => "adventure".to_string(),
+                        7 => "simulation".to_string(),
+                        8 => "puzzle".to_string(),
+                        _ => "unspecified".to_string(),
+                    }).collect(),
+                    rating_count: game.rating_count as i32,
+                    average_rating: game.average_rating,
+                    purchase_count: game.purchase_count as i32,
+                    created_at: game.created_at.map(|ts| format!("{}", ts.seconds)).unwrap_or_default(),
+                    updated_at: game.updated_at.map(|ts| format!("{}", ts.seconds)).unwrap_or_default(),
+                };
+                Ok(HttpResponse::Ok().json(game_dto))
+            } else {
+                Ok(HttpResponse::NotFound().json(serde_json::json!({
+                    "error": "Game not found"
+                })))
+            }
+        }
+        Err(status) => match status.code() {
+            tonic::Code::NotFound => Ok(HttpResponse::NotFound().json(serde_json::json!({
+                "error": "Game not found"
+            }))),
+            _ => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": status.message()
+            }))),
+        },
+        
+    }
+}
+
+async fn update_game(
+    data: web::Data<AppState>,
+    path: web::Path<String>,
+    json: web::Json<UpdateGameDto>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let game_id = path.into_inner();
+
+    if uuid::Uuid::parse_str(&game_id).is_err() {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "Invalid game ID format"
+        })));
+    }
+
+    let status = match json.status.as_deref() {
+        Some("draft") => Some(1),
+        Some("under_review") => Some(2),
+        Some("published") => Some(3),
+        Some("suspended") => Some(4),
+        Some("unspecified") => Some(0),
+        None => None,
+        Some(_) => {
+            return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "Invalid status. Must be: draft, under_review, published, suspended, or unspecified"
+            })));
+        }
+    };
+
+    let categories = json.categories.as_ref().map(|cats| 
+        cats.iter().map(|cat| match cat.as_str() {
+            "action" => 1,
+            "rpg" => 2,
+            "strategy" => 3,
+            "sports" => 4,
+            "racing" => 5,
+            "adventure" => 6,
+            "simulation" => 7,
+            "puzzle" => 8,
+            _ => 0, // unspecified
+        }).collect()
+    ).unwrap_or_default();
+
+    let request = tonic::Request::new(game::UpdateGameRequest {
+        id: game_id,
+        name: json.name.clone(),
+        description: json.description.clone(),
+        price: json.price,
+        cover_image: json.cover_image.clone(),
+        tags: json.tags.clone().unwrap_or_default(),
+        platforms: json.platforms.clone().unwrap_or_default(),
+        screenshots: json.screenshots.clone().unwrap_or_default(),
+        trailer_url: json.trailer_url.clone(),
+        status,
+        categories,
+    });
+
+    let mut client = data.game_client.clone();
+    match client.update_game(request).await {
+        Ok(response) => {
+            let game = response.into_inner();
+            let game_dto = GameDto {
+                id: game.id,
+                name: game.name,
+                description: Some(game.description),
+                developer_id: game.developer_id,
+                publisher_id: if game.publisher_id.is_empty() { None } else { Some(game.publisher_id) },
+                cover_image: game.cover_image,
+                trailer_url: if game.trailer_url.is_empty() { None } else { Some(game.trailer_url) },
+                release_date: game.release_date,
+                tags: game.tags,
+                platforms: game.platforms,
+                screenshots: game.screenshots,
+                price: game.price,
+                status: match game.status {
+                    0 => "unspecified".to_string(), 
+                    1 => "draft".to_string(),
+                    2 => "under_review".to_string(),
+                    3 => "published".to_string(),
+                    4 => "suspended".to_string(),
+                    _ => "unknown".to_string(),
+                },
+                categories: game.categories.iter().map(|&cat| match cat {
+                    1 => "action".to_string(),
+                    2 => "rpg".to_string(),
+                    3 => "strategy".to_string(),
+                    4 => "sports".to_string(),
+                    5 => "racing".to_string(),
+                    6 => "adventure".to_string(),
+                    7 => "simulation".to_string(),
+                    8 => "puzzle".to_string(),
+                    _ => "unspecified".to_string(),
+                }).collect(),
+                rating_count: game.rating_count as i32,
+                average_rating: game.average_rating,
+                purchase_count: game.purchase_count as i32,
+                created_at: game.created_at.map(|ts| format!("{}", ts.seconds)).unwrap_or_default(),
+                updated_at: game.updated_at.map(|ts| format!("{}", ts.seconds)).unwrap_or_default(),
+            };
+            Ok(HttpResponse::Ok().json(game_dto))
+        }
+        Err(status) => match status.code() {
+            tonic::Code::NotFound => Ok(HttpResponse::NotFound().json(serde_json::json!({
+                "error": "Game not found"
+            }))),
+            tonic::Code::InvalidArgument => {
+                Ok(HttpResponse::BadRequest().json(serde_json::json!({
+                    "error": status.message()
+                })))
+            }
+            tonic::Code::PermissionDenied => Ok(HttpResponse::Forbidden().json(serde_json::json!({
+                "error": "Permission denied: You can only update your own games"
+            }))),
+            _ => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": status.message()
+            }))),
+        },
+    }
+}
+
+
+async fn delete_game(
+    data: web::Data<AppState>,
+    path: web::Path<String>,
+    json: web::Json<DeleteGameDto>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let game_id = path.into_inner();
+
+    if uuid::Uuid::parse_str(&game_id).is_err() {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "Invalid game ID format"
+        })));
+    }
+
+    if uuid::Uuid::parse_str(&json.developer_id).is_err() {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "Invalid developer_id format"
+        })));
+    }
+
+    let request = tonic::Request::new(game::DeleteGameRequest {
+        id: game_id,
+        developer_id: json.developer_id.clone(),
+    });
+
+    let mut client = data.game_client.clone();
+    match client.delete_game(request).await {
+        Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": "Game deleted successfully"
+        }))),
+        Err(status) => match status.code() {
+            tonic::Code::NotFound => Ok(HttpResponse::NotFound().json(serde_json::json!({
+                "error": "Game not found"
+            }))),
+            tonic::Code::PermissionDenied => Ok(HttpResponse::Forbidden().json(serde_json::json!({
+                "error": "Permission denied: You can only delete your own games"
+            }))),
+            _ => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": status.message()
+            }))),
+        },
+    }
+}
+
+async fn list_games(
+    data: web::Data<AppState>,
+    query: web::Query<ListGamesQuery>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let categories = query.categories.as_ref().map(|cats| 
+        cats.iter().map(|cat| match cat.as_str() {
+            "action" => 1,
+            "rpg" => 2,
+            "strategy" => 3,
+            "sports" => 4,
+            "racing" => 5,
+            "adventure" => 6,
+            "simulation" => 7,
+            "puzzle" => 8,
+            _ => 0, // unspecified
+        }).collect()
+    ).unwrap_or_default();
+
+    let status = query.status.as_ref().and_then(|status_str| match status_str.as_str() {
+        "draft" => Some(1),
+        "under_review" => Some(2),
+        "published" => Some(3),
+        "suspended" => Some(4),
+        "unspecified" => Some(0),
+        _ => None,
+    });
+
+    let request = tonic::Request::new(game::ListGamesRequest {
+        developer_id: query.developer_id.clone(),
+        categories,
+        min_price: query.min_price,
+        max_price: query.max_price,
+        status,
+        search_query: query.search_query.clone(),
+        limit: query.limit.unwrap_or(50),
+        offset: query.offset.unwrap_or(0),
+        sort_by: query.sort_by.clone(),
+        sort_desc: query.sort_desc,
+    });
+
+    let mut client = data.game_client.clone();
+    match client.list_games(request).await {
+        Ok(response) => {
+            let resp = response.into_inner();
+
+            let game_dtos: Vec<GameDto> = resp
+                .games
+                .into_iter()
+                .map(|game| GameDto {
+                    id: game.id,
+                    name: game.name,
+                    description: Some(game.description),
+                    developer_id: game.developer_id,
+                    publisher_id: if game.publisher_id.is_empty() { None } else { Some(game.publisher_id) },
+                    cover_image: game.cover_image,
+                    trailer_url: if game.trailer_url.is_empty() { None } else { Some(game.trailer_url) },
+                    release_date: game.release_date,
+                    tags: game.tags,
+                    platforms: game.platforms,
+                    screenshots: game.screenshots,
+                    price: game.price,
+                    status: match game.status {
+                        0 => "unspecified".to_string(),
+                        1 => "draft".to_string(),
+                        2 => "under_review".to_string(),
+                        3 => "published".to_string(),
+                        4 => "suspended".to_string(),
+                        _ => "unknown".to_string(),
+                    },
+                    categories: game.categories.iter().map(|&cat| match cat {
+                        1 => "action".to_string(),
+                        2 => "rpg".to_string(),
+                        3 => "strategy".to_string(),
+                        4 => "sports".to_string(),
+                        5 => "racing".to_string(),
+                        6 => "adventure".to_string(),
+                        7 => "simulation".to_string(),
+                        8 => "puzzle".to_string(),
+                        _ => "unspecified".to_string(),
+                    }).collect(),
+                    rating_count: game.rating_count as i32,
+                    average_rating: game.average_rating,
+                    purchase_count: game.purchase_count as i32,
+                    created_at: game.created_at.map(|ts| format!("{}", ts.seconds)).unwrap_or_default(),
+                    updated_at: game.updated_at.map(|ts| format!("{}", ts.seconds)).unwrap_or_default(),
+                })
+                .collect();
+
+            Ok(HttpResponse::Ok().json(ListGamesResponse {
+                games: game_dtos,
+                total: resp.total,
+            }))
+        }
+        Err(status) => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": status.message()
+        }))),
+    }
+}
+
+
 fn proto_role_to_string(role: i32) -> String {
     match role {
         0 => "player".to_string(),
@@ -479,7 +909,11 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Failed to connect to user service");
 
-    let app_state = web::Data::new(AppState { user_client });
+    let game_client = game::game_service_client::GameServiceClient::connect("http://[::1]:50052")
+        .await
+        .expect("Failed to connect to game service");
+
+    let app_state = web::Data::new(AppState { user_client, game_client });
 
     let rate_limiter = web::Data::new(RateLimiter::new());
 
@@ -512,6 +946,11 @@ async fn main() -> std::io::Result<()> {
             .route("/api/users/{id}", web::put().to(update_user))
             .route("/api/users/{id}", web::delete().to(delete_user))
             .route("/api/users", web::get().to(users_list))
+            .route("/api/games", web::post().to(create_game))
+            .route("/api/games/{id}", web::get().to(get_game))
+            .route("/api/games/{id}", web::put().to(update_game))
+            .route("/api/games/{id}", web::delete().to(delete_game))
+            .route("/api/games", web::get().to(list_games))
     })
     .bind("127.0.0.1:8080")?
     .run()
