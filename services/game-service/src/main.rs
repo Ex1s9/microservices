@@ -27,9 +27,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grpc_addr = "[::1]:50052".parse()?;
     let http_addr = "0.0.0.0:8080".parse::<std::net::SocketAddr>()?;
     
-    let game_service = GameServiceImpl { pool };
+    let game_service = GameServiceImpl { pool: pool.clone() };
 
-    let app = create_routes();
+    let app = create_routes(pool.clone());
 
     let http_server = tokio::spawn(async move {
         let listener = tokio::net::TcpListener::bind(&http_addr).await.unwrap();

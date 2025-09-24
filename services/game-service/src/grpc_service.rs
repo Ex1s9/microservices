@@ -2,6 +2,7 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 use chrono::Utc;
 use sqlx::PgPool;
+use num_traits::ToPrimitive;
 
 use crate::game;
 use crate::types::GameResponse;
@@ -27,9 +28,9 @@ impl game::game_service_server::GameService for GameServiceImpl {
             description: Some(req.description),
             developer_id: req.developer_id,
             publisher_id: req.publisher_id,
-            cover_image: req.cover_image,
+            cover_image: Some(req.cover_image),
             trailer_url: req.trailer_url,
-            release_date: req.release_date,
+            release_date: Some(req.release_date),
             tags: req.tags,
             platforms: req.platforms,
             screenshots: vec![],
@@ -82,10 +83,10 @@ impl game::game_service_server::GameService for GameServiceImpl {
         let limit = req.page_size.max(1).min(100) as i32;
         let offset = req.page_token.parse::<i32>().unwrap_or(0);
         
-        let developer_id = if req.developer_id.is_empty() {
+        let developer_id = if req.developer_id.as_deref().map_or(true, |s| s.is_empty()) {
             None
         } else {
-            Some(Uuid::parse_str(&req.developer_id).map_err(|_| Status::invalid_argument("Invalid developer_id"))?)
+            Some(Uuid::parse_str(req.developer_id.as_deref().unwrap()).map_err(|_| Status::invalid_argument("Invalid developer_id"))?)
         };
         
         let categories: Option<Vec<DbGameCategory>> = if req.categories.is_empty() {
@@ -94,9 +95,9 @@ impl game::game_service_server::GameService for GameServiceImpl {
             Some(req.categories.into_iter().map(DbGameCategory::from_proto).collect())
         };
         
-        let status = if req.status == 0 { None } else { Some(DbGameStatus::from_proto(req.status)) };
+        let status = req.status.filter(|&s| s != 0).map(DbGameStatus::from_proto);
         
-        let search_query = if req.search_query.is_empty() { None } else { Some(req.search_query) };
+        let search_query = req.search_query.filter(|s| !s.is_empty());
 
         let (db_games, total) = db::list_games(
             &self.pool,
@@ -135,14 +136,14 @@ impl GameServiceImpl {
             name: db_game.name,
             description: Some(db_game.description),
             developer_id: db_game.developer_id.to_string(),
-            publisher_id: db_game.publisher_id.map(|p| p.to_string()).unwrap_or_default(),
-            cover_image: Some(db_game.cover_image),
+            publisher_id: db_game.publisher_id.map(|p| p.to_string()),
+            cover_image: db_game.cover_image,
             trailer_url: db_game.trailer_url,
             release_date: Some(db_game.release_date.format("%Y-%m-%d").to_string()),
             tags: db_game.tags,
             platforms: db_game.platforms,
             screenshots: db_game.screenshots,
-            price: db_game.price.to_string().parse::<i64>().unwrap_or(0),
+            price: (db_game.price.to_f64().unwrap_or(0.0) * 100.0) as i64,
             created_at: Some(prost_types::Timestamp {
                 seconds: db_game.created_at.timestamp(),
                 nanos: (db_game.created_at.timestamp_subsec_nanos()) as i32,
@@ -153,9 +154,9 @@ impl GameServiceImpl {
             }),
             status: db_game.status.to_proto(),
             categories: db_game.categories.into_iter().map(|c| c.to_proto()).collect(),
-            rating_count: db_game.rating_count as u32,
+            rating_count: db_game.rating_count,
             average_rating: db_game.average_rating.to_string().parse::<f64>().unwrap_or(0.0),
-            purchase_count: db_game.purchase_count as u32,
+            purchase_count: db_game.purchase_count,
         }
     }
 
@@ -166,13 +167,13 @@ impl GameServiceImpl {
             description: game.description,
             developer_id: game.developer_id,
             publisher_id: game.publisher_id,
-            cover_image: game.cover_image,
+            cover_image: game.cover_image.unwrap_or_default(),
             trailer_url: game.trailer_url,
-            release_date: game.release_date,
+            release_date: game.release_date.unwrap_or_default(),
             tags: game.tags,
             platforms: game.platforms,
             screenshots: game.screenshots,
-            price: game.price,
+            price: game.price as f64,
             status: match game.status {
                 1 => "draft".to_string(),
                 2 => "under_review".to_string(),

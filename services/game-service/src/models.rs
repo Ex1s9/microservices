@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-#[derive(Debug, sqlx::Type, Clone)]
+#[derive(Debug, sqlx::Type, Clone, PartialEq)]
 #[sqlx(type_name = "game_category", rename_all = "lowercase")]
 pub enum DbGameCategory {
      Unspecified,
@@ -33,7 +33,7 @@ pub struct DbGame {
      pub description: String,
      pub developer_id: Uuid,
      pub publisher_id: Option<Uuid>,
-     pub cover_image: String,
+     pub cover_image: Option<String>,
      pub trailer_url: Option<String>,
      pub release_date: chrono::NaiveDate,
      pub price: Decimal,
@@ -47,6 +47,7 @@ pub struct DbGame {
      pub purchase_count: i32,
      pub created_at: DateTime<Utc>,
      pub updated_at: DateTime<Utc>,
+     #[allow(dead_code)]
      pub deleted_at: Option<DateTime<Utc>>,
 }
 

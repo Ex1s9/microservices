@@ -1,8 +1,9 @@
 use axum::{
-    extract::Json,
+    extract::{Json, State},
     http::StatusCode,
     response::Json as ResponseJson,
 };
+use sqlx::PgPool;
 use tonic::Request;
 
 use crate::game;
@@ -10,11 +11,12 @@ use crate::grpc_service::GameServiceImpl;
 use crate::types::{CreateGameRequest, GameResponse};
 
 pub async fn create_game_http(
+    State(pool): State<PgPool>,
     Json(request): Json<CreateGameRequest>,
 ) -> Result<ResponseJson<GameResponse>, StatusCode> {
     use crate::game::game_service_server::GameService;
     
-    let service = GameServiceImpl;
+    let service = GameServiceImpl { pool };
     
     let grpc_request = game::CreateGameRequest {
         name: request.name,
@@ -27,7 +29,7 @@ pub async fn create_game_http(
         categories: request.categories,
         tags: request.tags,
         platforms: request.platforms,
-        price: request.price,
+        price: request.price as i64,
     };
 
     match service.create_game(Request::new(grpc_request)).await {

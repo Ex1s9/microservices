@@ -1,17 +1,18 @@
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{NaiveDate, Utc};
 use sqlx::postgres::PgPool;
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use crate::models::{DbGame, DbGameCategory, DbGameStatus};
 
+#[allow(dead_code)]
 pub async fn create_game(
      pool: &PgPool,
      name: String,
      description: String,
      developer_id: Uuid,
      publisher_id: Option<Uuid>,
-     cover_image: String,
+     cover_image: Option<String>,
      trailer_url: Option<String>,
      release_date: NaiveDate,
      categories: Vec<DbGameCategory>,
@@ -22,6 +23,9 @@ pub async fn create_game(
      let id = Uuid::new_v4();
      let now = Utc::now();
 
+     // Convert categories to strings for database insertion
+     let category_strings: Vec<String> = categories.iter().map(|c| format!("{:?}", c).to_lowercase()).collect();
+     
      let game = sqlx::query_as!(
           DbGame,
           r#"
@@ -31,7 +35,7 @@ pub async fn create_game(
                categories, tags, platforms, screenshots,
                created_at, updated_at
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::game_status, $11::game_category[], $12, $13, $14, $15, $15)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft'::game_status, $10::text[]::game_category[], $11, $12, $13, $14, $15)
           RETURNING 
                id, name, description, developer_id, publisher_id,
                cover_image, trailer_url, release_date, price, 
@@ -50,11 +54,11 @@ pub async fn create_game(
           trailer_url,
           release_date,
           price,
-          DbGameStatus::Draft,
-          &categories,
+          &category_strings,
           &tags,
           &platforms,
           &Vec::<String>::new(),
+          now,
           now
      )
      .fetch_one(pool)
@@ -63,6 +67,7 @@ pub async fn create_game(
      Ok(game)
 }
 
+#[allow(dead_code)]
 pub async fn get_game_by_id(pool: &PgPool, id: Uuid) -> Result<Option<DbGame>, sqlx::Error> {
      let record = sqlx::query_as!(
           DbGame,
@@ -86,6 +91,7 @@ pub async fn get_game_by_id(pool: &PgPool, id: Uuid) -> Result<Option<DbGame>, s
      Ok(record)
 }
 
+#[allow(dead_code)]
 pub async fn update_game(
      pool: &PgPool,
      id: Uuid,
@@ -102,6 +108,11 @@ pub async fn update_game(
 ) -> Result<DbGame, sqlx::Error> {
      let now = Utc::now();
 
+     // Convert categories to strings if provided
+     let category_strings = categories.as_ref().map(|cats| {
+          cats.iter().map(|c| format!("{:?}", c).to_lowercase()).collect::<Vec<String>>()
+     });
+     
      let record = sqlx::query_as!(
           DbGame,
           r#"
@@ -112,8 +123,8 @@ pub async fn update_game(
                price = COALESCE($4, price),
                cover_image = COALESCE($5, cover_image),
                trailer_url = COALESCE($6, trailer_url),
-               status = COALESCE($7::game_status, status),
-               categories = COALESCE($8::game_category[], categories),
+               status = CASE WHEN $7::int4 IS NOT NULL THEN (CASE $7 WHEN 1 THEN 'draft'::game_status WHEN 2 THEN 'under_review'::game_status WHEN 3 THEN 'published'::game_status WHEN 4 THEN 'suspended'::game_status END) ELSE status END,
+               categories = COALESCE($8::text[]::game_category[], categories),
                tags = COALESCE($9, tags),
                platforms = COALESCE($10, platforms),
                screenshots = COALESCE($11, screenshots),
@@ -134,8 +145,8 @@ pub async fn update_game(
           price,
           cover_image,
           trailer_url,
-          status,
-          categories.as_deref() as Option<&[DbGameCategory]>,
+          status.as_ref().map(|s| s.to_proto() as i32),
+          category_strings.as_deref(),
           tags.as_deref(),
           platforms.as_deref(),
           screenshots.as_deref(),
@@ -147,6 +158,7 @@ pub async fn update_game(
      Ok(record)
 }
 
+#[allow(dead_code)]
 pub async fn delete_game(pool: &PgPool, id: Uuid, developer_id: Uuid) -> Result<bool, sqlx::Error> {
      let now = Utc::now();
      let rows_affected = sqlx::query!(
@@ -166,6 +178,7 @@ pub async fn delete_game(pool: &PgPool, id: Uuid, developer_id: Uuid) -> Result<
      Ok(rows_affected > 0)
 }
 
+#[allow(dead_code)]
 pub async fn get_all_games(pool: &PgPool) -> Result<Vec<DbGame>, sqlx::Error> {
      let records = sqlx::query_as!(
           DbGame,
@@ -200,6 +213,11 @@ pub async fn list_games(
      limit: i32,
      offset: i32,
 ) -> Result<(Vec<DbGame>, i64), sqlx::Error> {
+     // Convert categories to strings for query
+     let category_strings = categories.as_ref().map(|cats| {
+          cats.iter().map(|c| format!("{:?}", c).to_lowercase()).collect::<Vec<String>>()
+     });
+     
      let games = sqlx::query_as!(
           DbGame,
           r#"
@@ -214,19 +232,19 @@ pub async fn list_games(
           FROM games
           WHERE deleted_at IS NULL
                AND ($1::uuid IS NULL OR developer_id = $1)
-               AND ($2::game_category[] IS NULL OR categories && $2)
+               AND ($2::text[] IS NULL OR categories && $2::text[]::game_category[])
                AND ($3::decimal IS NULL OR price >= $3)
                AND ($4::decimal IS NULL OR price <= $4)  
-               AND ($5::game_status IS NULL OR status = $5)
+               AND ($5::int4 IS NULL OR status = (CASE $5 WHEN 1 THEN 'draft'::game_status WHEN 2 THEN 'under_review'::game_status WHEN 3 THEN 'published'::game_status WHEN 4 THEN 'suspended'::game_status END))
                AND ($6::text IS NULL OR to_tsvector('english', name) @@ plainto_tsquery('english', $6))
           ORDER BY created_at DESC
           LIMIT $7 OFFSET $8
           "#,
           developer_id,
-          categories.as_deref() as Option<&[DbGameCategory]>,
+          category_strings.as_deref(),
           min_price,
           max_price,
-          status as Option<DbGameStatus>,
+          status.as_ref().map(|s| s.to_proto() as i32),
           search_query,
           limit as i64,
           offset as i64
@@ -239,17 +257,17 @@ pub async fn list_games(
           SELECT COUNT(*) FROM games 
           WHERE deleted_at IS NULL
                AND ($1::uuid IS NULL OR developer_id = $1)
-               AND ($2::game_category[] IS NULL OR categories && $2)
+               AND ($2::text[] IS NULL OR categories && $2::text[]::game_category[])
                AND ($3::decimal IS NULL OR price >= $3)
                AND ($4::decimal IS NULL OR price <= $4)  
-               AND ($5::game_status IS NULL OR status = $5)
+               AND ($5::int4 IS NULL OR status = (CASE $5 WHEN 1 THEN 'draft'::game_status WHEN 2 THEN 'under_review'::game_status WHEN 3 THEN 'published'::game_status WHEN 4 THEN 'suspended'::game_status END))
                AND ($6::text IS NULL OR to_tsvector('english', name) @@ plainto_tsquery('english', $6))
           "#,
           developer_id,
-          categories.as_deref() as Option<&[DbGameCategory]>,
+          category_strings.as_deref(),
           min_price,
           max_price,
-          status as Option<DbGameStatus>,
+          status.as_ref().map(|s| s.to_proto() as i32),
           search_query
      )
      .fetch_one(pool)
@@ -259,12 +277,15 @@ pub async fn list_games(
      Ok((games, total))
 }
 
+#[allow(dead_code)]
 pub async fn get_games_by_category(
      pool: &PgPool,
      category: DbGameCategory,
      limit: i32,
      offset: i32,
 ) -> Result<Vec<DbGame>, sqlx::Error> {
+     let category_string = format!("{:?}", category).to_lowercase();
+     
      let games = sqlx::query_as!(
           DbGame,
           r#"
@@ -277,13 +298,13 @@ pub async fn get_games_by_category(
                rating_count, average_rating, purchase_count,
                created_at, updated_at, deleted_at
           FROM games
-          WHERE $1::game_category = ANY(categories) 
+          WHERE $1::text::game_category = ANY(categories) 
                AND status = 'published'::game_status 
                AND deleted_at IS NULL
           ORDER BY average_rating DESC, purchase_count DESC
           LIMIT $2 OFFSET $3
           "#,
-          category as DbGameCategory,
+          category_string,
           limit as i64,
           offset as i64
      )
@@ -293,6 +314,7 @@ pub async fn get_games_by_category(
      Ok(games)
 }
 
+#[allow(dead_code)]
 pub async fn get_popular_games(
      pool: &PgPool,
      limit: i32,
@@ -321,6 +343,7 @@ pub async fn get_popular_games(
      Ok(games)
 }
 
+#[allow(dead_code)]
 pub async fn update_game_rating(
      pool: &PgPool,
      game_id: Uuid,
@@ -346,6 +369,7 @@ pub async fn update_game_rating(
      Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn increment_purchase_count(
      pool: &PgPool,
      game_id: Uuid,
@@ -366,6 +390,7 @@ pub async fn increment_purchase_count(
      Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn add_screenshot(
      pool: &PgPool,
      game_id: Uuid,
@@ -388,6 +413,7 @@ pub async fn add_screenshot(
      Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn remove_screenshot(
      pool: &PgPool,
      game_id: Uuid,
